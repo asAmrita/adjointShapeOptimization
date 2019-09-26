@@ -1,3 +1,17 @@
+Info << "Reading physicalProperties\n" << endl;
+IOdictionary physicalProperties
+(
+    IOobject
+    (
+	"physicalProperties",
+	runTime.constant(),
+	mesh,
+	IOobject::MUST_READ,
+	IOobject::NO_WRITE
+    )
+);
+wordList patchesToIntegrate(physicalProperties.lookup("boundaryPatchList"));
+
 Info<< "Reading field p\n" << endl;
 volScalarField p
 (
@@ -118,7 +132,66 @@ volScalarField alpha
     ),
     lambda*max(Ua & U, zeroSensitivity)
 );
+
 zeroCells(alpha, inletCells);
 //zeroCells(alpha, outletCells);
 
 #include "createFvOptions.H"
+Info << "Reading uMax field\n" << endl;
+volScalarField uMax
+(
+    IOobject
+    (
+	"uMax",
+	runTime.constant(),
+	mesh,
+	IOobject::MUST_READ,
+	IOobject::NO_WRITE
+    ),
+    mesh
+);
+
+Info << "Reading uMin field\n" << endl;
+volScalarField uMin
+(
+    IOobject
+    (
+	"uMin",
+	runTime.constant(),
+	mesh,
+	IOobject::MUST_READ,
+	IOobject::NO_WRITE
+    ),
+    mesh
+);
+
+Info << "Reading control u\n" << endl;
+volScalarField u
+(
+    IOobject
+    (
+	"u",
+	runTime.timeName(),
+	mesh,
+	IOobject::MUST_READ,
+	IOobject::AUTO_WRITE
+    ),
+    mesh
+);
+Info << "Reading numericalParameters\n" << endl;
+IOdictionary numericalParameters
+(
+    IOobject
+    (
+	"numericalParameters",
+	runTime.constant(),
+	mesh,
+	IOobject::MUST_READ,
+	IOobject::NO_WRITE
+    )
+);
+
+scalar tol(numericalParameters.lookupOrDefault<scalar>("tol", 1e-8));
+scalar alpha(numericalParameters.lookupOrDefault<scalar>("gamma", 1));
+scalar c1(numericalParameters.lookupOrDefault<scalar>("c1", 1e-4));
+scalar c2(numericalParameters.lookupOrDefault<scalar>("c2", 0.8));

@@ -2,7 +2,7 @@
   =========                 |
   \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox
    \\    /   O peration     |
-    \\  /    A nd           | Copyright (C) 2011-2017 OpenFOAM Foundation
+    \\  /    A nd           | Copyright (C) 2018 OpenFOAM Foundation
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
 License
@@ -22,227 +22,157 @@ License
     along with OpenFOAM.  If not, see <http://www.gnu.org/licenses/>.
 
 Application
-    ajointShapeOptimizationFoam
-
-Group
-    grpIncompressibleSolvers
+    laplaceAdjointFoam
 
 Description
-    Steady-state solver for incompressible, turbulent flow of non-Newtonian
-    fluids with optimisation of duct shape by applying "blockage" in regions
-    causing pressure loss as estimated using an adjoint formulation.
-
-    References:
-    \verbatim
-        "Implementation of a continuous adjoint for topology optimization of
-         ducted flows"
-        C. Othmer,
-        E. de Villiers,
-        H.G. Weller
-        AIAA-2007-3947
-        http://pdf.aiaa.org/preview/CDReadyMCFD07_1379/PV2007_3947.pdf
-    \endverbatim
-
-    Note that this solver optimises for total pressure loss whereas the
-    above paper describes the method for optimising power-loss.
 
 \*---------------------------------------------------------------------------*/
 
 #include "fvCFD.H"
-#include "singlePhaseTransportModel.H"
-#include "turbulentTransportModel.H"
-#include "simpleControl.H"
-#include "fvOptions.H"
-
-template<class Type>
-void zeroCells
-(
-    GeometricField<Type, fvPatchField, volMesh>& vf,
-    const labelList& cells
-)
-{
-    forAll(cells, i)
-    {
-        vf[cells[i]] = Zero;
-    }
-}
-
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+// Main program:
 
 int main(int argc, char *argv[])
 {
-    #include "postProcess.H"
+#include "setRootCase.H"
+#include "createTime.H"
+#include "createMesh.H"
+#include "createFields.H"
 
-    #include "addCheckCaseOptions.H"
-    #include "setRootCase.H"
-    #include "createTime.H"
-    #include "createMesh.H"
-    #include "createControl.H"
-    #include "createFields.H"
-    #include "initContinuityErrs.H"
-    #include "initAdjointContinuityErrs.H"
+    // Disable solvers performance output
+    lduMatrix::debug = 0;
+    solverPerformance::debug = 0;
 
-    turbulence->validate();
+    // Cost function value
+    scalar J = 0;
+    scalar Jold = 0;
+    scalar Jk = 0;
+    scalar erroru = 0;
+ scalar errory = 0;
+ scalar errorp = 0;
+// Compute cost function value
+#include "CostFunctionValue.H"
 
-    // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+    std::ofstream file("cost.csv");
+    file << 0 << "," << J << "," << 0 << nl;
 
-    Info<< "\nStarting time loop\n" << endl;
-
-    while (simple.loop())
-    {
-        Info<< "Time = " << runTime.timeName() << nl << endl;
-
-        //alpha +=
-        //    mesh.relaxationFactor("alpha")
-        //   *(lambda*max(Ua & U, zeroSensitivity) - alpha);
-        alpha +=
-            mesh.fieldRelaxationFactor("alpha")
-           *(min(max(alpha + lambda*(Ua & U), zeroAlpha), alphaMax) - alpha);
-
-        zeroCells(alpha, inletCells);
-        //zeroCells(alpha, outletCells);
-
-        // Pressure-velocity SIMPLE corrector
-        {
-            // Momentum predictor
-
-            tmp<fvVectorMatrix> tUEqn
-            (
-                fvm::div(phi, U)
-              + turbulence->divDevReff(U)
-              + fvm::Sp(alpha, U)
-             ==
-                fvOptions(U)
-            );
-            fvVectorMatrix& UEqn = tUEqn.ref();
-
-            UEqn.relax();
-
-            fvOptions.constrain(UEqn);
-
-            solve(UEqn == -fvc::grad(p));
-
-            fvOptions.correct(U);
-
-            volScalarField rAU(1.0/UEqn.A());
-            volVectorField HbyA(constrainHbyA(rAU*UEqn.H(), U, p));
-            tUEqn.clear();
-            surfaceScalarField phiHbyA("phiHbyA", fvc::flux(HbyA));
-            adjustPhi(phiHbyA, U, p);
-
-            // Update the pressure BCs to ensure flux consistency
-            constrainPressure(p, U, phiHbyA, rAU);
-
-            // Non-orthogonal pressure corrector loop
-            while (simple.correctNonOrthogonal())
-            {
-                fvScalarMatrix pEqn
-                (
-                    fvm::laplacian(rAU, p) == fvc::div(phiHbyA)
-                );
-
-                pEqn.setReference(pRefCell, pRefValue);
-                pEqn.solve();
-
-                if (simple.finalNonOrthogonalIter())
-                {
-                    phi = phiHbyA - pEqn.flux();
-                }
-            }
-
-            #include "continuityErrs.H"
-
-            // Explicitly relax pressure for momentum corrector
-            p.relax();
-
-            // Momentum corrector
-            U = HbyA - rAU*fvc::grad(p);
-            U.correctBoundaryConditions();
-            fvOptions.correct(U);
-        }
-
-        // Adjoint Pressure-velocity SIMPLE corrector
-        {
-            // Adjoint Momentum predictor
-
-            volVectorField adjointTransposeConvection((fvc::grad(Ua) & U));
-            //volVectorField adjointTransposeConvection
-            //(
-            //    fvc::reconstruct
-            //    (
-            //        mesh.magSf()*fvc::dotInterpolate(fvc::snGrad(Ua), U)
-            //    )
-            //);
-
-            zeroCells(adjointTransposeConvection, inletCells);
-
-            tmp<fvVectorMatrix> tUaEqn
-            (
-                fvm::div(-phi, Ua)
-              - adjointTransposeConvection
-              + turbulence->divDevReff(Ua)
-              + fvm::Sp(alpha, Ua)
-             ==
-                fvOptions(Ua)
-            );
-            fvVectorMatrix& UaEqn = tUaEqn.ref();
-
-            UaEqn.relax();
-
-            fvOptions.constrain(UaEqn);
-
-            solve(UaEqn == -fvc::grad(pa));
-
-            fvOptions.correct(Ua);
-
-            volScalarField rAUa(1.0/UaEqn.A());
-            volVectorField HbyAa("HbyAa", Ua);
-            HbyAa = rAUa*UaEqn.H();
-            tUaEqn.clear();
-            surfaceScalarField phiHbyAa("phiHbyAa", fvc::flux(HbyAa));
-            adjustPhi(phiHbyAa, Ua, pa);
-
-            // Non-orthogonal pressure corrector loop
-            while (simple.correctNonOrthogonal())
-            {
-                fvScalarMatrix paEqn
-                (
-                    fvm::laplacian(rAUa, pa) == fvc::div(phiHbyAa)
-                );
-
-                paEqn.setReference(paRefCell, paRefValue);
-                paEqn.solve();
-
-                if (simple.finalNonOrthogonalIter())
-                {
-                    phia = phiHbyAa - paEqn.flux();
-                }
-            }
-
-            #include "adjointContinuityErrs.H"
-
-            // Explicitly relax pressure for adjoint momentum corrector
-            pa.relax();
-
-            // Adjoint momentum corrector
-            Ua = HbyAa - rAUa*fvc::grad(pa);
-            Ua.correctBoundaryConditions();
-            fvOptions.correct(Ua);
-        }
-
-        laminarTransport.correct();
-        turbulence->correct();
+    std::ofstream errorFile("error.csv");
 
         runTime.write();
 
-        runTime.printExecutionTime(Info);
+    while (runTime.loop() && fabs(J - Jold) > tol)
+    {
+        // save old cost value
+        Jold = J;
+     #include"adjointShapeOptimizationFoam.H"
+        alphak = alpha;
+
+        // calculate current cost
+		#include "CostFunctionValue.H"
+        Jk = J;
+
+
+        bool gammaFound = false;
+
+        // calculate derivative^2 integrate((lambda*u + beta*p)^2 dv). Why??
+        scalar phip0 = gSum(volField * Foam::pow(lambda * alphak.internalField() + beta * Ua.internalField(), 2));
+        scalar phip1 = gSum(volField * Foam::pow(lambda * alphak.internalField() + beta * pa.internalField(), 2));
+
+        while ((!gammaFound) && (gamma > tol))
+        {
+            alpha = alphak - gamma * (lambda * uk + beta * p);
+
+            // truncate u for constrained control set
+            forAll(alpha, i)
+            {
+                alpha[i] = min(alpha[i], alphaMax[i]);
+                alpha[i] = max(alpha[i], alphaMin[i]);
+            }
+
+            alpha.correctBoundaryConditions();
+
+            // get new y
+            //solve(fvm::laplacian(k, y) -fvm::Sp(1.0, y) + beta * u + f);
+
+            // get new cost
+			#include "CostFunctionValue.H"
+
+            if (J <= Jk - c1 * gamma * phip0)
+            {
+                Info << "alpha found, alpha = " << gamma << ", J = " << J << ", phip0" << phip0 << endl;
+
+                gammaFound = true;
+            }
+            else
+            {
+                Info << "gamma NOT found, gamma = " << gamma << endl;
+                gamma = c2 * gamma;
+            }
+            Info<<J<<endl;
+        }
+
+        Info << "Iteration no. " << runTime.timeName() << " - "
+             << "Cost value " << J
+             << " - "
+             << "Cost variation" << fabs(J - Jold) << endl;
+
+        file.open("cost.csv",std::ios::app);
+        file << runTime.value() << "," << J << nl;
+        file.close();
+
+       /* // calculate the L2 norm of the error in control variables
+        erroru = Foam::sqrt(gSum(volField * (Foam::pow(u.internalField() - ud.internalField(), 2))));
+         errory = Foam::sqrt(gSum(volField * (Foam::pow(y.internalField() - yd.internalField(), 2))));
+         errorp = Foam::sqrt(gSum(volField * (Foam::pow(p.internalField() - pd.internalField(), 2))));
+        
+        errorFile.open("error.csv",std::ios::app);
+        errorFile << runTime.value() << "," << erroru << nl;
+
+        errorFile << runTime.value() << "," << errory << nl;
+        errorFile << runTime.value() << "," << errorp << nl;
+        errorFile.close();
+
+        Info << "Iteration no. " << runTime.timeName() << " - " << "error u " << erroru << nl;
+         Info << "Iteration no. " << runTime.timeName() << " - " << "error y " << errory << nl;
+         Info << "Iteration no. " << runTime.timeName() << " - " << "error p " << errorp << nl;
+       /* uDiff = u - ud;
+        forAll(uDiff,i)
+        {
+            uDiff[i] = fabs(u[i] - ud[i]);
+        }
+      */
+  /*  uDiff=mag(u-ud);
+    pDiff=mag(p-pd);
+    yDiff=mag(y-yd);*/
+        runTime.write();
     }
 
-    Info<< "End\n" << endl;
+   /* file.close();
+    errorFile.close();
 
+    runTime++;
+    u.write();
+    p.write();
+    u.write();
+    uDiff.write();
+    pDiff.write();
+    yDiff.write();
+    ud.write();
+    yd.write();
+    //    uc.write();
+    //    udiff.write();*/
+
+    // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+    Info << nl << endl;
+    Info << "ExecutionTime = " << runTime.elapsedCpuTime() << " s"
+         << "  ClockTime = " << runTime.elapsedClockTime() << " s"
+         << nl << endl;
+
+    Info << "\nEnd\n"
+         << endl;
     return 0;
 }
-
 
 // ************************************************************************* //
