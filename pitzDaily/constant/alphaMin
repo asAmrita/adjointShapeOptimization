@@ -51,7 +51,7 @@ boundaryField
 	value		uniform 0;
     }
 */
-
+/*
     dirichletBoundary
     {
 	type		fixedValue;
@@ -61,6 +61,36 @@ boundaryField
     backAndFront           
     {
         type            empty;
+    }*/
+
+
+    inlet
+    {
+        type            fixedValue;
+        value           uniform 0;
+    }
+    outlet
+    {
+      
+        type            fixedValue;
+        value           uniform 0;
+    }
+    upperWall
+    {
+        
+        type            fixedValue;
+        value           uniform 0;
+    }
+    lowerWall
+    {
+        type            fixedValue;
+        value           uniform 0;
+    }
+    frontAndBack
+    {
+        type            empty;
     }
 }
+
+
 // ************************************************************************* //

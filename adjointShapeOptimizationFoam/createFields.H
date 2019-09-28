@@ -11,7 +11,7 @@ IOdictionary physicalProperties
     )
 );
 wordList patchesToIntegrate(physicalProperties.lookup("boundaryPatchList"));
-
+dimensionedScalar beta(physicalProperties.lookup("beta"));
 Info<< "Reading field p\n" << endl;
 volScalarField p
 (
@@ -137,12 +137,39 @@ zeroCells(alpha, inletCells);
 //zeroCells(alpha, outletCells);
 
 #include "createFvOptions.H"
-Info << "Reading uMax field\n" << endl;
-volScalarField uMax
+volScalarField alphak
 (
     IOobject
     (
-	"uMax",
+        "alphak",
+        runTime.timeName(),
+        mesh,
+        IOobject::READ_IF_PRESENT,
+        IOobject::AUTO_WRITE
+    ),
+    lambda*max(Ua & U, zeroSensitivity)
+);
+
+/*Info << "Reading alphaMax field\n" << endl;
+volScalarField alphaMax
+(
+    IOobject
+    (
+	"alphaMax",
+	runTime.constant(),
+	mesh,
+	IOobject::MUST_READ,
+	IOobject::NO_WRITE
+    ),
+    mesh
+);*/
+
+Info << "Reading alphaMin field\n" << endl;
+volScalarField alphaMin
+(
+    IOobject
+    (
+	"alphaMin",
 	runTime.constant(),
 	mesh,
 	IOobject::MUST_READ,
@@ -150,21 +177,7 @@ volScalarField uMax
     ),
     mesh
 );
-
-Info << "Reading uMin field\n" << endl;
-volScalarField uMin
-(
-    IOobject
-    (
-	"uMin",
-	runTime.constant(),
-	mesh,
-	IOobject::MUST_READ,
-	IOobject::NO_WRITE
-    ),
-    mesh
-);
-
+/*
 Info << "Reading control u\n" << endl;
 volScalarField u
 (
@@ -177,7 +190,7 @@ volScalarField u
 	IOobject::AUTO_WRITE
     ),
     mesh
-);
+);*/
 Info << "Reading numericalParameters\n" << endl;
 IOdictionary numericalParameters
 (
@@ -192,6 +205,23 @@ IOdictionary numericalParameters
 );
 
 scalar tol(numericalParameters.lookupOrDefault<scalar>("tol", 1e-8));
-scalar alpha(numericalParameters.lookupOrDefault<scalar>("gamma", 1));
+scalar gamma(numericalParameters.lookupOrDefault<scalar>("gamma", 1));
 scalar c1(numericalParameters.lookupOrDefault<scalar>("c1", 1e-4));
 scalar c2(numericalParameters.lookupOrDefault<scalar>("c2", 0.8));
+/*Info << "Reading physicalProperties\n" << endl;
+IOdictionary physicalProperties
+(
+    IOobject
+    (
+	"physicalProperties",
+	runTime.constant(),
+	mesh,
+	IOobject::MUST_READ,
+	IOobject::NO_WRITE
+    )
+);
+
+dimensionedScalar k(physicalProperties.lookup("k"));
+dimensionedScalar beta(physicalProperties.lookup("beta"));
+dimensionedScalar lambda(physicalProperties.lookup("lambda"));*/
+

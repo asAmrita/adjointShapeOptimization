@@ -2,7 +2,7 @@
   =========                 |
   \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox
    \\    /   O peration     |
-    \\  /    A nd           | Copyright (C) 2011-2017 OpenFOAM Foundation
+    \\  /    A nd           | Copyright (C) 2018 OpenFOAM Foundation
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
 License
@@ -22,32 +22,11 @@ License
     along with OpenFOAM.  If not, see <http://www.gnu.org/licenses/>.
 
 Application
-    ajointShapeOptimizationFoam
-
-Group
-    grpIncompressibleSolvers
+    laplaceAdjointFoam
 
 Description
-    Steady-state solver for incompressible, turbulent flow of non-Newtonian
-    fluids with optimisation of duct shape by applying "blockage" in regions
-    causing pressure loss as estimated using an adjoint formulation.
-
-    References:
-    \verbatim
-        "Implementation of a continuous adjoint for topology optimization of
-         ducted flows"
-        C. Othmer,
-        E. de Villiers,
-        H.G. Weller
-        AIAA-2007-3947
-        http://pdf.aiaa.org/preview/CDReadyMCFD07_1379/PV2007_3947.pdf
-    \endverbatim
-
-    Note that this solver optimises for total pressure loss whereas the
-    above paper describes the method for optimising power-loss.
 
 \*---------------------------------------------------------------------------*/
-#include "volFields.H"
 #include "fvCFD.H"
 #include "singlePhaseTransportModel.H"
 #include "turbulentTransportModel.H"
@@ -67,11 +46,16 @@ void zeroCells
     }
 }
 
-
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+// Main program:
 
 int main(int argc, char *argv[])
 {
+/*#include "setRootCase.H"
+#include "createTime.H"
+#include "createMesh.H"
+#include "createFields.H"*/
+
     #include "postProcess.H"
 
     #include "addCheckCaseOptions.H"
@@ -82,49 +66,51 @@ int main(int argc, char *argv[])
     #include "createFields.H"
     #include "initContinuityErrs.H"
     #include "initAdjointContinuityErrs.H"
-
+    #include "CostFunctionValue.H"
     turbulence->validate();
 
-    // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
- // Cost function value
+    // Disable solvers performance output
+    lduMatrix::debug = 0;
+    solverPerformance::debug = 0;
+
+    // Cost function value
     scalar J = 0;
     scalar Jold = 0;
     scalar Jk = 0;
-   // scalar alphak = 0;
-   // scalar alpha = 0;
-    // Compute cost function value
-#include "costFunctionValue.H"
+    scalar erroru = 0;
+ scalar errory = 0;
+ scalar errorp = 0;
+// Compute cost function value
+//#include "CostFunctionValue.H"
 
-    std::ofstream file("results.csv");
-    file << 0 << "," << J << nl;
-    file.close();
+    std::ofstream file("cost.csv");
+    file << 0 << "," << J << "," << 0 << nl;
 
-    Info << "\nStarting time loop\n"
-         << endl;
+    std::ofstream errorFile("error.csv");
 
-    Info<< "\nStarting time loop\n" << endl;
+        runTime.write();
 
-    while (simple.loop()&& fabs(J - Jold) > tol)
+    while (runTime.loop() && fabs(J - Jold) > tol)
     {
-        Info<< "Time = " << runTime.timeName() << nl << endl;
-J=Jold;
-        zeroCells(alpha, inletCells);
-        
-            #include "stateEquation.H"
-            #include "adjointEquation.H"
+        // save old cost value
+        Jold = J;
+     //#include "adjointShapeOptimizationFoam.H"
+        alphak = alpha;
 
-#include "costFunctionValue.H"
+        // calculate current cost
+		#include "CostFunctionValue.H"
         Jk = J;
-       alphak = alpha;
+
+
         bool gammaFound = false;
 
         // calculate derivative^2 integrate((lambda*u + beta*p)^2 dv). Why??
- //scalar phip0 = gSum(volField *
-                          //  Foam::pow(Ua.internalField() & U.internalField(), 2));
+        scalar phip0 = gSum(volField * Foam::pow(lambda * alphak.internalField() + beta * Ua.internalField(), 2));
+        scalar phip1 = gSum(volField * Foam::pow(lambda * alphak.internalField() + beta * pa.internalField(), 2));
 
- /*while ((!gammaFound) && (gamma > tol))
+        while ((!gammaFound) && (gamma > tol))
         {
-            alpha = alphak - gamma * (Ua & U);
+            alpha = alphak - gamma * (lambda * uk + beta * p);
 
             // truncate u for constrained control set
             forAll(alpha, i)
@@ -138,8 +124,8 @@ J=Jold;
             // get new y
             //solve(fvm::laplacian(k, y) -fvm::Sp(1.0, y) + beta * u + f);
 
-          /*  // get new cost
-			#include "costFunctionValue.H"
+            // get new cost
+			#include "CostFunctionValue.H"
 
             if (J <= Jk - c1 * gamma * phip0)
             {
@@ -149,13 +135,13 @@ J=Jold;
             }
             else
             {
-                Info << "alpha NOT found, alpha = " << gamma << endl;
+                Info << "gamma NOT found, gamma = " << gamma << endl;
                 gamma = c2 * gamma;
             }
             Info<<J<<endl;
         }
-*/
-Info << "Iteration no. " << runTime.timeName() << " - "
+
+        Info << "Iteration no. " << runTime.timeName() << " - "
              << "Cost value " << J
              << " - "
              << "Cost variation" << fabs(J - Jold) << endl;
@@ -164,20 +150,58 @@ Info << "Iteration no. " << runTime.timeName() << " - "
         file << runTime.value() << "," << J << nl;
         file.close();
 
-           
+       /* // calculate the L2 norm of the error in control variables
+        erroru = Foam::sqrt(gSum(volField * (Foam::pow(u.internalField() - ud.internalField(), 2))));
+         errory = Foam::sqrt(gSum(volField * (Foam::pow(y.internalField() - yd.internalField(), 2))));
+         errorp = Foam::sqrt(gSum(volField * (Foam::pow(p.internalField() - pd.internalField(), 2))));
+        
+        errorFile.open("error.csv",std::ios::app);
+        errorFile << runTime.value() << "," << erroru << nl;
 
-       // laminarTransport.correct();
-       // turbulence->correct();
+        errorFile << runTime.value() << "," << errory << nl;
+        errorFile << runTime.value() << "," << errorp << nl;
+        errorFile.close();
 
+        Info << "Iteration no. " << runTime.timeName() << " - " << "error u " << erroru << nl;
+         Info << "Iteration no. " << runTime.timeName() << " - " << "error y " << errory << nl;
+         Info << "Iteration no. " << runTime.timeName() << " - " << "error p " << errorp << nl;
+       /* uDiff = u - ud;
+        forAll(uDiff,i)
+        {
+            uDiff[i] = fabs(u[i] - ud[i]);
+        }
+      */
+  /*  uDiff=mag(u-ud);
+    pDiff=mag(p-pd);
+    yDiff=mag(y-yd);*/
         runTime.write();
-
-        runTime.printExecutionTime(Info);
     }
 
-    Info<< "End\n" << endl;
+   /* file.close();
+    errorFile.close();
 
+    runTime++;
+    u.write();
+    p.write();
+    u.write();
+    uDiff.write();
+    pDiff.write();
+    yDiff.write();
+    ud.write();
+    yd.write();
+    //    uc.write();
+    //    udiff.write();*/
+
+    // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+    Info << nl << endl;
+    Info << "ExecutionTime = " << runTime.elapsedCpuTime() << " s"
+         << "  ClockTime = " << runTime.elapsedClockTime() << " s"
+         << nl << endl;
+
+    Info << "\nEnd\n"
+         << endl;
     return 0;
 }
-
 
 // ************************************************************************* //

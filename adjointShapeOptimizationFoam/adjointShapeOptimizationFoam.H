@@ -48,48 +48,9 @@ Description
 
 \*---------------------------------------------------------------------------*/
 
-#include "fvCFD.H"
-#include "singlePhaseTransportModel.H"
-#include "turbulentTransportModel.H"
-#include "simpleControl.H"
-#include "fvOptions.H"
-
-template<class Type>
-void zeroCells
-(
-    GeometricField<Type, fvPatchField, volMesh>& vf,
-    const labelList& cells
-)
-{
-    forAll(cells, i)
-    {
-        vf[cells[i]] = Zero;
-    }
-}
-
-
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
-int main(int argc, char *argv[])
-{
-    #include "postProcess.H"
-
-    #include "addCheckCaseOptions.H"
-    #include "setRootCase.H"
-    #include "createTime.H"
-    #include "createMesh.H"
-    #include "createControl.H"
-    #include "createFields.H"
-    #include "initContinuityErrs.H"
-    #include "initAdjointContinuityErrs.H"
     
-    turbulence->validate();
-
-    // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
-
-    Info<< "\nStarting time loop\n" << endl;
- 
-        
     while (simple.loop() )
     {
         Info<< "Time = " << runTime.timeName() << nl << endl;
@@ -242,8 +203,8 @@ int main(int argc, char *argv[])
 
     Info<< "End\n" << endl;
 
-    return 0;
-}
+    //return 0;
+
 
 
 // ************************************************************************* //
