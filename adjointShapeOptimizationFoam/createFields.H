@@ -110,12 +110,12 @@ dimensionedScalar lambda
     laminarTransport
 );
 
-dimensionedScalar alphaMax
+/*dimensionedScalar alphaMax
 (
     "alphaMax",
     dimless/dimTime,
     laminarTransport
-);
+);*/
 
 const labelList& inletCells = mesh.boundary()["inlet"].faceCells();
 //const labelList& outletCells = mesh.boundary()["outlet"].faceCells();
@@ -150,7 +150,7 @@ volScalarField alphak
     lambda*max(Ua & U, zeroSensitivity)
 );
 
-/*Info << "Reading alphaMax field\n" << endl;
+Info << "Reading alphaMax field\n" << endl;
 volScalarField alphaMax
 (
     IOobject
@@ -162,7 +162,7 @@ volScalarField alphaMax
 	IOobject::NO_WRITE
     ),
     mesh
-);*/
+);
 
 Info << "Reading alphaMin field\n" << endl;
 volScalarField alphaMin

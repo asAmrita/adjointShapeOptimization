@@ -90,7 +90,7 @@ int main(int argc, char *argv[])
     scalar J = 0;
     scalar Jold = 0;
     scalar Jk = 0;
-   // scalar alphak = 0;
+    scalar volField = 0;
    // scalar alpha = 0;
     // Compute cost function value
 #include "costFunctionValue.H"
@@ -109,22 +109,28 @@ int main(int argc, char *argv[])
         Info<< "Time = " << runTime.timeName() << nl << endl;
 J=Jold;
         zeroCells(alpha, inletCells);
+// alpha +=
+           // mesh.fieldRelaxationFactor("alpha")
+          // *(min(max(alpha + lambda*(Ua & U), zeroAlpha), alphaMax) - alpha);
+
         
             #include "stateEquation.H"
             #include "adjointEquation.H"
 
 #include "costFunctionValue.H"
         Jk = J;
+
+
        alphak = alpha;
         bool gammaFound = false;
-
+scalar phip0 = 0;
         // calculate derivative^2 integrate((lambda*u + beta*p)^2 dv). Why??
- //scalar phip0 = gSum(volField *
-                          //  Foam::pow(Ua.internalField() & U.internalField(), 2));
+ //scalar phip0 = gSum(volField * (Ua.internalField()*Ua.internalField())&U.internalField());
+dimensionedScalar gd = dimensionedScalar("gd", dimless * dimTime / sqr(dimLength), 1.0);
 
- /*while ((!gammaFound) && (gamma > tol))
+  while ((!gammaFound) && (gamma > tol))
         {
-            alpha = alphak - gamma * (Ua & U);
+            alpha = alpha - gamma * gd * (Ua & U);
 
             // truncate u for constrained control set
             forAll(alpha, i)
@@ -132,13 +138,12 @@ J=Jold;
                 alpha[i] = min(alpha[i], alphaMax[i]);
                 alpha[i] = max(alpha[i], alphaMin[i]);
             }
-
             alpha.correctBoundaryConditions();
 
             // get new y
             //solve(fvm::laplacian(k, y) -fvm::Sp(1.0, y) + beta * u + f);
 
-          /*  // get new cost
+            // get new cost
 			#include "costFunctionValue.H"
 
             if (J <= Jk - c1 * gamma * phip0)
@@ -154,7 +159,7 @@ J=Jold;
             }
             Info<<J<<endl;
         }
-*/
+
 Info << "Iteration no. " << runTime.timeName() << " - "
              << "Cost value " << J
              << " - "
